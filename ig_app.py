@@ -27,11 +27,12 @@ if st.session_state["authentication_status"]:
     st.header("IG Strategies Analytics")
 
     conn = DatabaseConnector()
-    momentum_data = conn.get_strategy_data()
+    momentum_data = conn.get_momentum_strategy_data()
+    hodl_btc_data = conn.get_hodl_btc_strategy_data()
 
     tab1, tab2 = st.tabs(['main', 'exchange'])
     with tab1:    
-        show_main_tab(momentum_data)
+        show_main_tab(momentum_data, hodl_btc_data)
     with tab2:
         st.write("Sorry, this tab is empty for now")
 

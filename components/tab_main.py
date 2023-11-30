@@ -116,8 +116,8 @@ def calculate_strategy_stats(strategy_data: pd.DataFrame) -> pd.Series:
     - strategy_data (pd.DataFrame): DataFrame containing historical data for the trading strategy.
         It should include the following columns:
             - 'Coin' (str): Tickers of coins (uppercase), for example, 'BTC'.
-            - 'Purchase price' (datetime): Date of coin (Coin) purchase.
-            - 'Momentum' (float): Portfolio value at a given date.
+            - 'Purchase price' (float): Price of coin (Coin).
+            - 'Portfolio' (float): Portfolio value at a given date.
             - 'Quantity' (float): Amount of purchased coins (Coin).
             - 'Profit / Loss %' (float): Profitability as Month-over-Month return for each period.
 
@@ -163,7 +163,7 @@ def calculate_strategy_stats(strategy_data: pd.DataFrame) -> pd.Series:
     purchase_price = strategy_data['Purchase price'].iloc[-1]
 
     # Get start and current portfolio balances
-    start_portfolio_balance = strategy_data['Momentum'].iloc[0]
+    start_portfolio_balance = strategy_data['Portfolio'].iloc[0]
     current_portfolio_balance = strategy_data['Quantity'].iloc[-1] * current_price
 
     # Calculate MoM, ROI, and Monthly return with compound interest
@@ -279,7 +279,7 @@ def describe_profit_loss(data: pd.DataFrame, exclude_outliers: bool=False) -> pd
     result.index.name = None
     return result
 
-def show_main_tab(data: pd.DataFrame):
+def show_main_tab(data: pd.DataFrame, hodl_btc_data:pd.DataFrame=None):
 
     st.subheader('*Raw Data*')
     with st.expander('See Strategy Raw Data'):
@@ -287,10 +287,14 @@ def show_main_tab(data: pd.DataFrame):
 
     st.subheader('*Momentum Strategy Key Stats*')
     with st.expander('See Key Stats'):
-        st.dataframe(calculate_strategy_stats(data), use_container_width=True)
+        momentum_stats = calculate_strategy_stats(data)
+        hodl_btc_stats = calculate_strategy_stats(hodl_btc_data)
 
+        strategies_metrics = pd.concat([momentum_stats, hodl_btc_stats], axis=1, keys= ['Momentum', 'Hodl BTC'])
+
+        st.dataframe(strategies_metrics, use_container_width=True)
     st.subheader('*Momentum Strategy vc HODL BTC*')
-    st.line_chart(data=data, x='Purchase date', y=['Momentum', 'Hodl BTC'])
+    st.line_chart(data=data, x='Purchase date', y=['Portfolio', 'Hodl BTC'])
 
     st.subheader('*Profit / Loss Desciption*')
     if st.checkbox('Exclude outliers', help='Whether to exclude outliers beyond the range [-500%, 500%]'):
