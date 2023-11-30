@@ -2,8 +2,33 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from typing import Union
-from binance.client import Client
+from requests import Session
+from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
+import json
 
+
+def get_coinmarketcap_price(symbol):
+    url = 'https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest'
+
+    parameters = {
+        'symbol': symbol,
+        'convert':'USD'
+    }
+
+    headers = {
+        'Accepts': 'application/json',
+        'X-CMC_PRO_API_KEY': st.secrets['coinmarketcap']['api_key'],
+    }
+
+    session = Session()
+    session.headers.update(headers)
+
+    try:
+        response = session.get(url, params=parameters)
+        data = json.loads(response.text)
+        return data['data'][symbol][0]['quote']['USD']['price']
+    except (ConnectionError, Timeout, TooManyRedirects) as e:
+        print(e)
 
 def calculate_sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0, normalization_factor: float = 1) -> float:
     """
@@ -82,7 +107,7 @@ def calculate_duration_of_losses(returns: pd.Series) -> int:
 
     return max_periods_in_loss
 
-@st.cache_data
+# @st.cache_data
 def calculate_strategy_stats(strategy_data: pd.DataFrame) -> pd.Series:
     """
     Calculate various performance metrics for a given trading strategy based on historical data.
@@ -126,15 +151,11 @@ def calculate_strategy_stats(strategy_data: pd.DataFrame) -> pd.Series:
       calculate_max_drawdown, and calculate_duration_of_losses for specific metric calculations.
     """
 
-    client = Client(st.secrets['binance']['api_key'], st.secrets['binance']['secret_key'])
-    
     # Get latest portfolio coin and load data from Binance exchange
     latest_coin = strategy_data['Coin'].iloc[-1]
     try:
-        coin_data_response = client.get_symbol_ticker(symbol=f'{latest_coin}USDT')
-        current_price = float(coin_data_response['price'])
+        current_price = get_coinmarketcap_price(f'{latest_coin}')
     except Exception as err:
-        print(err)
         st.warning(f'Current price for {latest_coin} is not downloaded!')
         current_price = strategy_data['Sell price'].iloc[-1]
 
