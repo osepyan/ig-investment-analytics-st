@@ -1,6 +1,5 @@
 import streamlit as st
 from components.tab_main import show_main_tab
-from components.tab_exchange import show_prices
 from components.about import about_text
 from components.auth import auth
 from components.sidebar import show_sidebar
@@ -34,7 +33,7 @@ if st.session_state["authentication_status"]:
     with tab1:    
         show_main_tab(momentum_data)
     with tab2:
-        show_prices("LINKUSDT")
+        st.write("Sorry, this tab is empty for now")
 
 elif st.session_state["authentication_status"] is False:
     st.sidebar.error('Username/password is incorrect')

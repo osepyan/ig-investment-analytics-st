@@ -1,8 +1,8 @@
-import requests
 import streamlit as st
 import pandas as pd
 import numpy as np
 from typing import Union
+from binance.client import Client
 
 
 def calculate_sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0, normalization_factor: float = 1) -> float:
@@ -124,13 +124,17 @@ def calculate_strategy_stats(strategy_data: pd.DataFrame) -> pd.Series:
     Note:
     - The function uses additional functions like calculate_sharpe_ratio, calculate_sortino_ratio,
       calculate_max_drawdown, and calculate_duration_of_losses for specific metric calculations.
-    """    
+    """
+
+    client = Client(st.secrets['binance']['api_key'], st.secrets['binance']['secret_key'])
+    
     # Get latest portfolio coin and load data from Binance exchange
     latest_coin = strategy_data['Coin'].iloc[-1]
     try:
-        coin_data_response = requests.get(f'https://api.binance.com/api/v3/ticker/price?symbol={latest_coin}USDT')
-        current_price = float(coin_data_response.json()['price'])
-    except:
+        coin_data_response = client.get_symbol_ticker(symbol=f'{latest_coin}USDT')
+        current_price = float(coin_data_response['price'])
+    except Exception as err:
+        print(err)
         st.warning(f'Current price for {latest_coin} is not downloaded!')
         current_price = strategy_data['Sell price'].iloc[-1]
 
