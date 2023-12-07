@@ -1,18 +1,33 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from typing import Union
+from typing import Union, Tuple
 from requests import Session
 from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
-import json
+import itertools
 
 
-def get_coinmarketcap_price(symbol):
+@st.cache_data(ttl=600)
+def get_coinmarketcap_price(symbol: str) -> Union[float, None]:
+    """
+    Get the current price of a cryptocurrency from CoinMarketCap.
+
+    Parameters:
+    - symbol (str): The symbol of the cryptocurrency (e.g., 'BTC').
+
+    Returns:
+    float: The current price of the cryptocurrency in USD. Returns None in case of errors.
+
+    Raises:
+    - ConnectionError: If there is a problem with the network connection.
+    - Timeout: If the request to CoinMarketCap times out.
+    - TooManyRedirects: If there are too many redirects in the request.
+    """
     url = 'https://pro-api.coinmarketcap.com/v2/cryptocurrency/quotes/latest'
 
     parameters = {
         'symbol': symbol,
-        'convert':'USD'
+        'convert': 'USD'
     }
 
     headers = {
@@ -25,12 +40,14 @@ def get_coinmarketcap_price(symbol):
 
     try:
         response = session.get(url, params=parameters)
-        data = json.loads(response.text)
+        data = response.json()
         return data['data'][symbol][0]['quote']['USD']['price']
     except (ConnectionError, Timeout, TooManyRedirects) as e:
-        print(e)
+        st.error(f"Unable to fetch data from CoinMarketCap. Please check your internet connection and try again.")
+        return None
 
-def calculate_sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0, normalization_factor: float = 1) -> float:
+@st.cache_data(ttl=3600)
+def calculate_sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0.0, normalization_factor: int = 1) -> float:
     """
     Calculate Sharpe Ratio for a given series of returns.
 
@@ -40,17 +57,21 @@ def calculate_sharpe_ratio(returns: pd.Series, risk_free_rate: float = 0, normal
     Parameters:
     - returns (pd.Series): Series of returns.
     - risk_free_rate (float): Annual risk-free rate (default is 0).
-    - normalization_factor (float): Normalization factor (default is 1).
+    - normalization_factor (int): Number of periods over which returns are measured (e.g., number of days).
+      If returns represent daily returns, normalization_factor should be the total number of days.
 
     Returns:
-    float: Sharpe Ratio.
+    float: Sharpe Ratio. A higher Sharpe Ratio indicates better risk-adjusted performance.
     """
-    excess_returns = returns - risk_free_rate
-    sharpe_ratio = excess_returns.mean() / excess_returns.std() / np.sqrt(len(returns) / normalization_factor) if excess_returns.std() != 0 else 0
+    if returns.std() > 0:
+        sharpe_ratio = (returns.mean() - risk_free_rate) / (returns.std() * np.sqrt(normalization_factor))
+    else:
+        sharpe_ratio = 0.0
 
     return sharpe_ratio
 
-def calculate_sortino_ratio(returns: pd.Series, target_return: Union[float, int]=0, normalization_factor: float=1) -> float:
+@st.cache_data(ttl=3600)
+def calculate_sortino_ratio(returns: pd.Series, risk_free_rate: float = 0.0, normalization_factor: float=1) -> float:
     """
     Calculate Sortino Ratio for a given series of returns.
 
@@ -59,21 +80,24 @@ def calculate_sortino_ratio(returns: pd.Series, target_return: Union[float, int]
 
     Parameters:
     - returns (pd.Series): Series of returns.
-    - target_return (float or int): Target return rate (default is 0).
-    - normalization_factor (float): Normalization factor (default is 1).
+    - risk_free_rate (float): Annual risk-free rate (default is 0).
+    - normalization_factor (float): Number of periods over which returns are measured (e.g., number of days).
+      If returns represent daily returns, normalization_factor should be the total number of days.
 
     Returns:
-    float: Sortino Ratio.
+    float: Sortino Ratio. A higher Sortino Ratio indicates better risk-adjusted performance.
     """
-    downside_returns = returns[returns < target_return]
+    downside_returns = returns[returns < 0]
     downside_std_dev = downside_returns.std()
     
-    mean_return = returns.mean()
-    
-    sortino_ratio = (mean_return - target_return) / downside_std_dev / np.sqrt(len(returns)) * normalization_factor if downside_std_dev != 0 else 0
+    if downside_std_dev > 0:
+        sortino_ratio = (returns.mean() - risk_free_rate) / (downside_std_dev * np.sqrt(normalization_factor))
+    else:
+        sortino_ratio = 0
     
     return sortino_ratio
 
+@st.cache_data(ttl=3600)
 def calculate_max_drawdown(returns: pd.Series) -> float:
     """
     Calculate the Maximum Drawdown, which measures the maximum loss from a peak to a trough.
@@ -82,7 +106,7 @@ def calculate_max_drawdown(returns: pd.Series) -> float:
     - returns (pd.Series): Series of returns.
 
     Returns:
-    float: Maximum Drawdown.
+    float: Maximum Drawdown. A measure of the maximum loss from a peak to a trough.
     """
     wealth_index = (1 + returns).cumprod()
     previous_peaks = wealth_index.cummax()
@@ -91,6 +115,7 @@ def calculate_max_drawdown(returns: pd.Series) -> float:
 
     return max_drawdown
 
+@st.cache_data(ttl=3600)
 def calculate_duration_of_losses(returns: pd.Series) -> int:
     """
     Calculate the Duration of Losses, which represents the cumulative time the strategy is in a loss.
@@ -99,7 +124,7 @@ def calculate_duration_of_losses(returns: pd.Series) -> int:
     - returns (pd.Series): Series of returns.
 
     Returns:
-    int: Duration of Losses.
+    int: Duration of Losses. Cumulative time the strategy is in a loss.
     """
     consecutive_losses = (returns < 0).astype(int)
     periods_in_loss = consecutive_losses.groupby((consecutive_losses != consecutive_losses.shift()).cumsum()).cumsum()
@@ -107,7 +132,7 @@ def calculate_duration_of_losses(returns: pd.Series) -> int:
 
     return max_periods_in_loss
 
-# @st.cache_data
+@st.cache_data(ttl=600)
 def calculate_strategy_stats(strategy_data: pd.DataFrame) -> pd.Series:
     """
     Calculate various performance metrics for a given trading strategy based on historical data.
@@ -122,7 +147,7 @@ def calculate_strategy_stats(strategy_data: pd.DataFrame) -> pd.Series:
             - 'Profit / Loss %' (float): Profitability as Month-over-Month return for each period.
 
     Returns:
-    pd.Series: A series containing calculated performance metrics for the trading strategy.
+    StrategyKeyMetrics: A NamedTuple containing calculated performance metrics for the trading strategy.
 
     Metrics:
     - Life Period: Number of periods (rows) in the strategy data.
@@ -150,30 +175,18 @@ def calculate_strategy_stats(strategy_data: pd.DataFrame) -> pd.Series:
     - The function uses additional functions like calculate_sharpe_ratio, calculate_sortino_ratio,
       calculate_max_drawdown, and calculate_duration_of_losses for specific metric calculations.
     """
-
-    # Get latest portfolio coin and load data from Binance exchange
-    latest_coin = strategy_data['Coin'].iloc[-1]
-    try:
-        current_price = get_coinmarketcap_price(f'{latest_coin}')
-    except Exception as err:
-        st.warning(f'Current price for {latest_coin} is not downloaded!')
-        current_price = strategy_data['Sell price'].iloc[-1]
-
-    # Get purchase price
-    purchase_price = strategy_data['Purchase price'].iloc[-1]
-
+    
     # Get start and current portfolio balances
     start_portfolio_balance = strategy_data['Portfolio'].iloc[0]
-    current_portfolio_balance = strategy_data['Quantity'].iloc[-1] * current_price
+    current_portfolio_balance = strategy_data['Portfolio'].iloc[-1]
+    months_count = strategy_data.shape[0] - 1
 
-    # Calculate MoM, ROI, and Monthly return with compound interest
-    mom = (current_price - purchase_price) / purchase_price
+    # Calculate ROI, and Monthly return with compound interest
     roi = (current_portfolio_balance - start_portfolio_balance) / start_portfolio_balance
-    return_with_compound_interest = (current_portfolio_balance / start_portfolio_balance) ** (1/strategy_data.shape[0]) - 1
+    return_with_compound_interest = (current_portfolio_balance / start_portfolio_balance) ** (1/months_count) - 1
 
     # get all yields of the strategy
     yields = strategy_data['Profit / Loss %'].copy()
-    yields.iloc[-1] = mom
 
     # calculate basic metrics
     profit_metrics = yields[yields > 0].agg({
@@ -197,40 +210,137 @@ def calculate_strategy_stats(strategy_data: pd.DataFrame) -> pd.Series:
     })
 
     # Calculate Sharpe Ratio, Sortino Ratio, Max Drawdown, and Duration of Losses
-    sharpe_ratio = calculate_sharpe_ratio(yields, normalization_factor=np.sqrt(yields.count()))
-    sortino_ratio = calculate_sortino_ratio(yields, normalization_factor=np.sqrt(yields.count()))
+    sharpe_ratio = calculate_sharpe_ratio(yields, normalization_factor=yields.count())
+    sortino_ratio = calculate_sortino_ratio(yields, normalization_factor=yields.count())
     max_drawdown = calculate_max_drawdown(yields)
     duration_of_losses = calculate_duration_of_losses(yields)
 
     metrics = {
-        'Life Period': strategy_data.shape[0],
-        'Profit Count': profit_metrics['Count'],
-        'Loss Count': loss_metrics['Count'],
-        'MoM': mom,
-        'ROI': roi,
-        'Monthly Return with Compound Interest': return_with_compound_interest,
-        'Mean Profit': profit_metrics['Mean'],
-        'Mean Loss': loss_metrics['Mean'],
-        'Median Profit': profit_metrics['Median'],
-        'Median Loss': loss_metrics['Median'],
-        'Std Profit': profit_metrics['Standard Deviation'],
-        'Std Loss': loss_metrics['Standard Deviation'],
-        'Maximum Profit': profit_metrics['Maximum'],
-        'Maximum Loss': loss_metrics['Minimum'],
-        'Minimum Profit': profit_metrics['Minimum'],
-        'Minimum Loss': loss_metrics['Maximum'],
-        'Sharpe Ratio': sharpe_ratio,
-        'Sortino Ratio': sortino_ratio,
-        'Max Drawdown': max_drawdown,
-        'Max Periods in Loss': duration_of_losses
+        'life_period': strategy_data.shape[0],
+        'profit_count': profit_metrics['Count'],
+        'loss_count': loss_metrics['Count'],
+        'month_over_month': strategy_data['Profit / Loss %'].iloc[-1],
+        'return_on_investment': roi,
+        'monthly_return_with_compound_interest': return_with_compound_interest,
+        'average_return': strategy_data['Profit / Loss %'].mean(),
+        'volatility': strategy_data['Profit / Loss %'].std(),
+        'mean_profit': profit_metrics['Mean'],
+        'mean_loss': loss_metrics['Mean'],
+        'median_profit': profit_metrics['Median'],
+        'median_loss': loss_metrics['Median'],
+        'std_profit': profit_metrics['Standard Deviation'],
+        'std_loss': loss_metrics['Standard Deviation'],
+        'max_profit': profit_metrics['Maximum'],
+        'max_loss': loss_metrics['Minimum'],
+        'min_profit': profit_metrics['Minimum'],
+        'min_loss': loss_metrics['Maximum'],
+        'sharpe_ratio': sharpe_ratio,
+        'sortino_ratio': sortino_ratio,
+        'max_drawdown': max_drawdown,
+        'duration_of_losses': duration_of_losses
     }
     metrics_series = pd.Series(metrics, name='Value')
     metrics_series.index.name = 'Metric'
-    
-    return metrics_series
-    # return pd.DataFrame(metrics, index=[0])
 
-@st.cache_data
+    return metrics_series
+
+@st.cache_data(ttl=600)
+def update_portfolio_current_balance(strategy_data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Update the current balance of the portfolio based on the latest market data.
+
+    Parameters:
+    - strategy_data (pd.DataFrame): DataFrame containing portfolio data.
+
+    Returns:
+    pd.DataFrame: Updated DataFrame with the current balance information.
+    """
+    try:
+        if 'Coin' not in strategy_data.columns or 'Purchase price' not in strategy_data.columns or 'Quantity' not in strategy_data.columns:
+            st.warning("Missing necessary columns in strategy_data. Unable to update portfolio balance.")
+            return strategy_data
+        
+        if strategy_data.empty:
+            st.warning("Empty strategy_data. Unable to update portfolio balance.")
+            return strategy_data
+
+        latest_coin = strategy_data['Coin'].iloc[-1]
+
+        current_price = get_coinmarketcap_price(f'{latest_coin}')
+        purchase_price = strategy_data['Purchase price'].iloc[-1]
+
+        current_rate_of_return = (current_price - purchase_price) / purchase_price
+        current_portfolio_balance = strategy_data['Quantity'].iloc[-1] * current_price
+
+        strategy_data.loc[strategy_data.index[-1], 'Sell price'] = current_price
+        strategy_data.loc[strategy_data.index[-1], 'Profit / Loss %'] = current_rate_of_return
+        strategy_data.loc[strategy_data.index[-1], 'Portfolio'] = current_portfolio_balance
+
+        return strategy_data
+    
+    except (KeyError, IndexError) as e:
+        st.warning(f'Error updating current balance for {latest_coin}: {e}')
+        return strategy_data
+
+@st.cache_data(ttl=600)
+def calculate_compound_interest_dynamics(portfolio_balance: pd.Series, dates: pd.Series) -> pd.Series:
+    """
+    Calculate the compound interest dynamics based on the portfolio balance over time.
+
+    Parameters:
+    - portfolio_balance (pd.Series): Series of portfolio balances.
+    - dates (pd.Series): Series of dates corresponding to the portfolio balances.
+
+    Returns:
+    pd.Series: Compound interest dynamics.
+    """    
+    start_portfolio_balance = portfolio_balance.iloc[0]
+    compound_interests = pd.Series(index=dates, dtype=float)
+
+    for month, current_balance in zip(itertools.count(), portfolio_balance):
+        try:
+            compound_interests[dates[month]] = (current_balance / start_portfolio_balance) ** (1 / month) - 1
+        except (ZeroDivisionError):
+            compound_interests[dates[month]] = 0
+
+    return compound_interests
+
+def show_main_key_stats(key_stats: pd.Series) -> None:
+    """
+    Display the main key stats of the strategy on the screen.
+
+    Parameters:
+    - key_stats (pd.Series): Series containing key statistics of the strategy.
+    """
+    container = st.container()
+    with container:
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
+        with col1:
+            st.metric('MoM', 
+                      f"{round(key_stats['month_over_month']*100, 2)}%",
+                      help='Month-Over-Month')
+        with col2:
+            st.metric('CI', 
+                      f"{round(key_stats['monthly_return_with_compound_interest']*100, 2)}%", 
+                      help='Return with Compound Interest')
+        with col3:
+            st.metric('Average return',
+                      f"{round(key_stats['average_return']*100, 2)}%",
+                      help='The Mean Value of the Profit / Loss for all periods ')
+        with col4:
+            st.metric('Volatility',
+                      f"{round(key_stats['volatility']*100, 2)}%",
+                      help='The Standart Deviation of the Profit / Loss for all periods ')            
+        with col5:
+            st.metric('Mean Profit', 
+                      f"{round(key_stats['mean_profit']*100, 2)}%",
+                      help='The Average Value of the Profit')
+        with col6:
+            st.metric('Mean Loss', 
+                      f"{round(key_stats['mean_loss']*100, 2)}%",
+                      help='The Average Value of the Loss')
+
+@st.cache_data(ttl=600)
 def calculate_strategy_share(yields: pd.Series) -> pd.DataFrame:
     """
     Calculate the share of profit, loss, and hodl categories in a trading strategy based on yields.
@@ -256,7 +366,7 @@ def calculate_strategy_share(yields: pd.Series) -> pd.DataFrame:
                                       .rename(index={'profit': 'PROFIT', 'loss': 'LOSS', 'hodl': 'HODL'})
                                       .to_frame())
 
-@st.cache_data
+@st.cache_data(ttl=600)
 def describe_profit_loss(data: pd.DataFrame, exclude_outliers: bool=False) -> pd.DataFrame:
     """
     Generate a summary of profit and loss percentages in the given DataFrame.
@@ -279,28 +389,145 @@ def describe_profit_loss(data: pd.DataFrame, exclude_outliers: bool=False) -> pd
     result.index.name = None
     return result
 
-def show_main_tab(data: pd.DataFrame, hodl_btc_data:pd.DataFrame=None):
+def exclude_outliers(strategy_data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Exclude outliers from the strategy data based on the 'Profit / Loss %' column.
 
+    Parameters:
+    - strategy_data (pd.DataFrame): DataFrame containing strategy data.
+
+    Returns:
+    pd.DataFrame: DataFrame with outliers excluded.
+    """
+    if 'Profit / Loss %' not in strategy_data.columns:
+        raise ValueError("Column 'Profit / Loss %' not found in strategy_data.")
+    
+    filtered_data = strategy_data[strategy_data['Profit / Loss %'].between(-5, 5)].reset_index()
+    return filtered_data
+
+def update_and_exclude_outliers(momentum_data: pd.DataFrame, hodl_btc_data: pd.DataFrame = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Update current balance for both strategies and exclude outliers if chosen.
+
+    Parameters:
+    - momentum_data (pd.DataFrame): DataFrame containing the Momentum strategy data.
+    - hodl_btc_data (pd.DataFrame, optional): DataFrame containing HODL BTC strategy data.
+
+    Returns:
+    Tuple[pd.DataFrame, pd.DataFrame]: Updated DataFrames for the Momentum strategy and HODL BTC.
+    """
+    momentum_data = update_portfolio_current_balance(momentum_data)
+    hodl_btc_data = update_portfolio_current_balance(hodl_btc_data)
+
+    if st.toggle('Exclude outliers', help='Whether to exclude outliers beyond the range [-500%, 500%]'):
+        momentum_data = exclude_outliers(momentum_data)
+        hodl_btc_data = exclude_outliers(hodl_btc_data)
+
+    return momentum_data, hodl_btc_data
+
+def display_main_key_metrics(momentum_stats: pd.Series, hodl_btc_stats: pd.Series) -> None:
+    """
+    Display main key metrics for trading strategies.
+
+    Parameters:
+    - momentum_stats (pd.Series): Key metrics for the momentum strategy.
+    - hodl_btc_stats (pd.Series): Key metrics for the HODL BTC strategy.
+
+    Returns:
+    None
+    """
+    show_main_key_stats(momentum_stats)
+
+    with st.expander('See All Key Metrics'):
+        strategies_metrics = pd.concat([momentum_stats, hodl_btc_stats], axis=1, keys=['Momentum', 'Hodl BTC'])
+        st.dataframe(strategies_metrics, use_container_width=True)
+
+def display_strategy_comparison_chart(momentum_data: pd.DataFrame) -> None:
+    """
+    Display a comparison chart between the momentum strategy and HODL BTC.
+
+    Parameters:
+    - momentum_data (pd.DataFrame): DataFrame containing data for the momentum strategy.
+
+    Returns:
+    None
+    """
+    st.subheader('*Momentum Strategy vs HODL BTC*')
+    st.line_chart(data=momentum_data, x='Purchase date', y=['Portfolio', 'Hodl BTC'])
+
+def display_return_with_compound_interest(momentum_data: pd.DataFrame) -> None:
+    """
+    Display Return with Compound Interest metrics.
+
+    Parameters:
+    - momentum_data (pd.DataFrame): DataFrame containing data for the momentum strategy.
+
+    Returns:
+    None
+    """
+    st.subheader('*Return with Compound Interest*')
+    compound_interests = calculate_compound_interest_dynamics(momentum_data['Portfolio'], momentum_data['Purchase date'])
+
+    with st.container():
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Current CI", f'{round(compound_interests.iloc[-1]*100, 2)}%')
+        with col2:    
+            st.metric("Mean CI", f'{round(compound_interests.mean()*100, 2)}%')
+        with col3:
+            st.metric("CI StDev", f'{round(compound_interests.std()*100, 2)}%')
+        st.bar_chart(compound_interests)
+
+def display_raw_data(momentum_data: pd.DataFrame) -> None:
+    """
+    Display raw data for the momentum strategy.
+
+    Parameters:
+    - momentum_data (pd.DataFrame): DataFrame containing data for the momentum strategy.
+
+    Returns:
+    None
+    """
     st.subheader('*Raw Data*')
     with st.expander('See Strategy Raw Data'):
-        st.dataframe(data, use_container_width=True)
+        st.dataframe(momentum_data, use_container_width=True)
 
-    st.subheader('*Momentum Strategy Key Stats*')
-    with st.expander('See Key Stats'):
-        momentum_stats = calculate_strategy_stats(data)
-        hodl_btc_stats = calculate_strategy_stats(hodl_btc_data)
+def show_main_tab(momentum_data: pd.DataFrame, hodl_btc_data: pd.DataFrame = None) -> None:
+    """
+    Display the main tab with key metrics, comparisons, and raw data for a trading strategy.
 
-        strategies_metrics = pd.concat([momentum_stats, hodl_btc_stats], axis=1, keys= ['Momentum', 'Hodl BTC'])
+    Parameters:
+    - data (pd.DataFrame): DataFrame containing the main trading strategy data.
+    - hodl_btc_data (pd.DataFrame, optional): DataFrame containing HODL BTC strategy data.
 
-        st.dataframe(strategies_metrics, use_container_width=True)
-    st.subheader('*Momentum Strategy vc HODL BTC*')
-    st.line_chart(data=data, x='Purchase date', y=['Portfolio', 'Hodl BTC'])
+    Returns:
+    None
+    """
+    # Check if data is not empty and contains necessary columns
+    if momentum_data.empty or 'Purchase date' not in momentum_data.columns or 'Portfolio' not in momentum_data.columns:
+        st.warning("Invalid or empty data provided.")
+        return
 
-    st.subheader('*Profit / Loss Desciption*')
-    if st.checkbox('Exclude outliers', help='Whether to exclude outliers beyond the range [-500%, 500%]'):
-        st.dataframe(describe_profit_loss(data, True), use_container_width=True)
-    else:
-        st.dataframe(describe_profit_loss(data), use_container_width=True)
+    # Check if hodl_btc_data is not empty and contains necessary columns
+    if hodl_btc_data is not None and (hodl_btc_data.empty or 'Purchase date' not in hodl_btc_data.columns or 'Portfolio' not in hodl_btc_data.columns):
+        st.warning("Invalid or empty hodl_btc_data provided.")
+        return
 
-    st.subheader('*Profit / Loss / Hodl shares*')
-    st.bar_chart(calculate_strategy_share(data['Profit / Loss %']), height=200)
+    # Update and exclude outliers for both strategies
+    momentum_data, hodl_btc_data = update_and_exclude_outliers(momentum_data, hodl_btc_data)
+
+    # Calculate key metrics for both strategies
+    momentum_stats = calculate_strategy_stats(momentum_data)
+    hodl_btc_stats = calculate_strategy_stats(hodl_btc_data)
+
+    # Display main key metrics
+    display_main_key_metrics(momentum_stats, hodl_btc_stats)
+
+    # Display comparison chart
+    display_strategy_comparison_chart(momentum_data)
+
+    # Display Return with Compound Interest metrics
+    display_return_with_compound_interest(momentum_data)
+
+    # Display raw data
+    display_raw_data(momentum_data)

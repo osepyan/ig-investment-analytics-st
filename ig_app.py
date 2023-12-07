@@ -18,10 +18,10 @@ st.set_page_config(
 )
 
 authenticator = auth()
-authenticator.login('Login', 'sidebar')
+authenticator.login('Login', 'main')
 
 if st.session_state["authentication_status"]:
-    authenticator.logout('Logout', 'sidebar', key='unique_key')
+    authenticator.logout('Logout', 'main', key='unique_key')
     show_sidebar()
 
     st.header("IG Strategies Analytics")
@@ -37,6 +37,6 @@ if st.session_state["authentication_status"]:
         st.write("Sorry, this tab is empty for now")
 
 elif st.session_state["authentication_status"] is False:
-    st.sidebar.error('Username/password is incorrect')
+    st.error('Username/password is incorrect')
 elif st.session_state["authentication_status"] is None:
-    st.sidebar.warning('Please enter your username and password')
+    st.warning('Please enter your username and password')

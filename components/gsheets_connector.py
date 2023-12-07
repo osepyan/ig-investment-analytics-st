@@ -10,7 +10,7 @@ class DatabaseConnector:
 
     Attributes:
     - conn (GSheetsConnection): Connection to the Google Sheets database.
-    """    
+    """
     def __init__(self):
         """
         Initialize the DatabaseConnector class.
