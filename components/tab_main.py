@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import itertools
+
 from typing import Union, Tuple
 from requests import Session
 from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
-import itertools
 
 
 @st.cache_data(ttl=600)
@@ -175,7 +176,6 @@ def calculate_strategy_stats(strategy_data: pd.DataFrame) -> pd.Series:
     - The function uses additional functions like calculate_sharpe_ratio, calculate_sortino_ratio,
       calculate_max_drawdown, and calculate_duration_of_losses for specific metric calculations.
     """
-    
     # Get start and current portfolio balances
     start_portfolio_balance = strategy_data['Portfolio'].iloc[0]
     current_portfolio_balance = strategy_data['Portfolio'].iloc[-1]
@@ -183,8 +183,12 @@ def calculate_strategy_stats(strategy_data: pd.DataFrame) -> pd.Series:
 
     # Calculate ROI, and Monthly return with compound interest
     roi = (current_portfolio_balance - start_portfolio_balance) / start_portfolio_balance
-    return_with_compound_interest = (current_portfolio_balance / start_portfolio_balance) ** (1/months_count) - 1
-
+    
+    try:
+        return_with_compound_interest = (current_portfolio_balance / start_portfolio_balance) ** (1/months_count) - 1
+    except ZeroDivisionError:
+        return_with_compound_interest = 0
+        
     # get all yields of the strategy
     yields = strategy_data['Profit / Loss %'].copy()
 
@@ -293,14 +297,14 @@ def calculate_compound_interest_dynamics(portfolio_balance: pd.Series, dates: pd
 
     Returns:
     pd.Series: Compound interest dynamics.
-    """    
+    """
     start_portfolio_balance = portfolio_balance.iloc[0]
     compound_interests = pd.Series(index=dates, dtype=float)
-
+    
     for month, current_balance in zip(itertools.count(), portfolio_balance):
         try:
             compound_interests[dates[month]] = (current_balance / start_portfolio_balance) ** (1 / month) - 1
-        except (ZeroDivisionError):
+        except ZeroDivisionError:
             compound_interests[dates[month]] = 0
 
     return compound_interests
@@ -492,7 +496,9 @@ def display_raw_data(momentum_data: pd.DataFrame) -> None:
     with st.expander('See Strategy Raw Data'):
         st.dataframe(momentum_data, use_container_width=True)
 
-def show_main_tab(momentum_data: pd.DataFrame, hodl_btc_data: pd.DataFrame = None) -> None:
+def show_main_tab(momentum_data: pd.DataFrame, 
+                  hodl_btc_data: pd.DataFrame = None, 
+                  coin_api_data: pd.DataFrame = None) -> None:
     """
     Display the main tab with key metrics, comparisons, and raw data for a trading strategy.
 
@@ -513,8 +519,27 @@ def show_main_tab(momentum_data: pd.DataFrame, hodl_btc_data: pd.DataFrame = Non
         st.warning("Invalid or empty hodl_btc_data provided.")
         return
 
+    min_date = min(momentum_data['Purchase date'].dt.year)
+    max_date = max(momentum_data['Purchase date'].dt.year)
+    st.slider('Choose date range to display', 
+                min_value=min_date, 
+                max_value=max_date,
+                value=(min_date, max_date),
+                key='tab_main_date_range_slider')
+
     # Update and exclude outliers for both strategies
     momentum_data, hodl_btc_data = update_and_exclude_outliers(momentum_data, hodl_btc_data)
+
+    # Update dataframe by slider date range
+    momentum_data = momentum_data[momentum_data['Purchase date'].dt.year.between(
+        st.session_state.tab_main_date_range_slider[0],
+        st.session_state.tab_main_date_range_slider[1]
+    )].reset_index(drop=True)
+
+    hodl_btc_data = hodl_btc_data[hodl_btc_data['Purchase date'].dt.year.between(
+        st.session_state.tab_main_date_range_slider[0],
+        st.session_state.tab_main_date_range_slider[1]
+    )].reset_index(drop=True)
 
     # Calculate key metrics for both strategies
     momentum_stats = calculate_strategy_stats(momentum_data)
@@ -525,6 +550,11 @@ def show_main_tab(momentum_data: pd.DataFrame, hodl_btc_data: pd.DataFrame = Non
 
     # Display comparison chart
     display_strategy_comparison_chart(momentum_data)
+
+    # # Display current coin price chart
+    # current_coin = momentum_data['Coin'].iloc[-1]
+    # st.subheader(f'*{current_coin} Price Chart*')
+    # st.line_chart(data=coin_api_data, x='datetime', y=[current_coin])
 
     # Display Return with Compound Interest metrics
     display_return_with_compound_interest(momentum_data)

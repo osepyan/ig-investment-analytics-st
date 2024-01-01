@@ -2,8 +2,8 @@ import streamlit as st
 from components.tab_main import show_main_tab
 from components.about import about_text
 from components.auth import auth
-from components.sidebar import show_sidebar
 from components.gsheets_connector import DatabaseConnector
+from components.tab_data import show_coin_api_data
 
 
 # Configures the default settings of the page
@@ -22,7 +22,6 @@ authenticator.login('Login', 'main')
 
 if st.session_state["authentication_status"]:
     authenticator.logout('Logout', 'main', key='unique_key')
-    show_sidebar()
 
     st.header("IG Strategies Analytics")
 
@@ -30,11 +29,11 @@ if st.session_state["authentication_status"]:
     momentum_data = conn.get_momentum_strategy_data()
     hodl_btc_data = conn.get_hodl_btc_strategy_data()
 
-    tab1, tab2 = st.tabs(['main', 'exchange'])
+    tab1, tab2 = st.tabs(['main', 'g sheet'])
     with tab1:    
         show_main_tab(momentum_data, hodl_btc_data)
     with tab2:
-        st.write("Sorry, this tab is empty for now")
+        show_coin_api_data()
 
 elif st.session_state["authentication_status"] is False:
     st.error('Username/password is incorrect')

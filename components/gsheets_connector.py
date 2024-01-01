@@ -3,7 +3,6 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 
 
-@st.cache_resource
 class DatabaseConnector:
     """
     A class for connecting to and querying a Google Sheets database.
