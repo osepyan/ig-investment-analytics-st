@@ -2,7 +2,6 @@ import streamlit as st
 from components.tab_main import show_main_tab
 from components.about import about_text
 from components.auth import auth
-from components.gsheets_connector import DatabaseConnector
 from components.tab_data import show_coin_api_data
 
 
@@ -23,15 +22,10 @@ authenticator.login('Login', 'main')
 if st.session_state["authentication_status"]:
     authenticator.logout('Logout', 'main', key='unique_key')
 
-    st.header("IG Strategies Analytics")
-
-    conn = DatabaseConnector()
-    momentum_data = conn.get_momentum_strategy_data()
-    hodl_btc_data = conn.get_hodl_btc_strategy_data()
-
-    tab1, tab2 = st.tabs(['main', 'g sheet'])
-    with tab1:    
-        show_main_tab(momentum_data, hodl_btc_data)
+    st.header("IG Strategies Analytics")    
+    tab1, tab2 = st.tabs(['main', 'gsheet'])
+    with tab1:
+        show_main_tab()
     with tab2:
         show_coin_api_data()
 

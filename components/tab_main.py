@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import itertools
 
+from .gsheets.sheets_connector import MomentumSheetsConnector
 from typing import Union, Tuple
 from requests import Session
 from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
@@ -10,7 +11,7 @@ from requests.exceptions import ConnectionError, Timeout, TooManyRedirects
 
 @st.cache_data(ttl=600)
 def get_coinmarketcap_price(symbol: str) -> Union[float, None]:
-    """
+    """  
     Get the current price of a cryptocurrency from CoinMarketCap.
 
     Parameters:
@@ -409,25 +410,18 @@ def exclude_outliers(strategy_data: pd.DataFrame) -> pd.DataFrame:
     filtered_data = strategy_data[strategy_data['Profit / Loss %'].between(-5, 5)].reset_index()
     return filtered_data
 
-def update_and_exclude_outliers(momentum_data: pd.DataFrame, hodl_btc_data: pd.DataFrame = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def update_and_exclude_outliers(strategy_data: pd.DataFrame) -> pd.DataFrame:
     """
-    Update current balance for both strategies and exclude outliers if chosen.
+    Update current balance the given strategy and exclude outliers if chosen.
 
     Parameters:
-    - momentum_data (pd.DataFrame): DataFrame containing the Momentum strategy data.
-    - hodl_btc_data (pd.DataFrame, optional): DataFrame containing HODL BTC strategy data.
+    - strategy_data (pd.DataFrame): DataFrame containing the strategy data.
 
     Returns:
-    Tuple[pd.DataFrame, pd.DataFrame]: Updated DataFrames for the Momentum strategy and HODL BTC.
+    pd.DataFrame: Updated DataFrames for the strategy.
     """
-    momentum_data = update_portfolio_current_balance(momentum_data)
-    hodl_btc_data = update_portfolio_current_balance(hodl_btc_data)
-
-    if st.toggle('Exclude outliers', help='Whether to exclude outliers beyond the range [-500%, 500%]'):
-        momentum_data = exclude_outliers(momentum_data)
-        hodl_btc_data = exclude_outliers(hodl_btc_data)
-
-    return momentum_data, hodl_btc_data
+    updated_data = update_portfolio_current_balance(strategy_data)
+    return updated_data
 
 def display_main_key_metrics(momentum_stats: pd.Series, hodl_btc_stats: pd.Series) -> None:
     """
@@ -496,9 +490,108 @@ def display_raw_data(momentum_data: pd.DataFrame) -> None:
     with st.expander('See Strategy Raw Data'):
         st.dataframe(momentum_data, use_container_width=True)
 
-def show_main_tab(momentum_data: pd.DataFrame, 
-                  hodl_btc_data: pd.DataFrame = None, 
-                  coin_api_data: pd.DataFrame = None) -> None:
+@st.cache_data(ttl=600)
+def retrive_data_from_gsheet(gsheet_connection: str, sheet: str) -> pd.DataFrame:
+    placeholder = st.empty()
+    status = placeholder.status("Downloading strategy data...  :new_moon:")
+    
+    with status:
+        spreadsheet = MomentumSheetsConnector(gsheet_connection)
+        status.update(label="Download complete!", state="complete")
+    placeholder.empty()
+
+    df = spreadsheet.get_data_from_sheet(sheet)
+    if validate_data(df):
+        return df
+
+@st.cache_data(ttl=600)
+def validate_data(df: pd.DataFrame) -> bool:
+    """
+    Validate the input DataFrame for required columns and non-emptiness.
+
+    Parameters:
+    - df (pd.DataFrame): The DataFrame to be validated.
+
+    Returns:
+    bool: True if the DataFrame is valid, False otherwise.
+
+    This function checks whether the input DataFrame meets the following criteria:
+    1. It is not empty.
+    2. It contains all the required columns: 'Coin', 'Purchase date', 'Sale date', 'Purchase price', 
+       'Quantity', 'Profit / Loss %', and 'Portfolio'.
+
+    If the DataFrame is empty or missing any of the required columns, a warning message is displayed
+    using the streamlit library, and the function returns False. Otherwise, it returns True.
+
+    Example:
+    ```
+    momentum_data = retrieve_data_from_gsheet('gsheets', 'streamlit')
+    hodl_btc_data = retrieve_data_from_gsheet('gsheets', 'hodl_btc')
+
+    if not validate_data(momentum_data) or not validate_data(hodl_btc_data):
+        return
+    ```
+
+    In this example, the function is used to validate trading strategy data loaded from Google Sheets.
+    """
+    required_columns = ["Coin", "Purchase date", "Sale date", "Purchase price", "Quantity", "Profit / Loss %", "Portfolio"]
+
+    if df.empty:
+        st.warning("Data is empty.")
+        return False
+
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        st.warning(f"Data is missing required columns: {', '.join(missing_columns)}")
+        return False
+
+    return True
+
+def display_date_range_slider(data: pd.DataFrame, date_column: str) -> None:
+    """
+    Display a date range slider based on the specified date column in the provided DataFrame.
+
+    Parameters:
+    - data (pd.DataFrame): DataFrame containing the date column.
+    - date_column (str): The name of the date column.
+
+    Example:
+    ```
+    display_date_range_slider(momentum_data, 'Purchase date')
+    ```
+    """
+    min_date = min(data[date_column].dt.year)
+    max_date = max(data[date_column].dt.year)
+
+    st.slider('Choose date range to display', 
+              min_value=min_date, 
+              max_value=max_date,
+              value=(min_date, max_date),
+              key='date_range_slider')
+
+@st.cache_data(ttl=600)
+def update_dataframe_by_date_range(data: pd.DataFrame, date_column: str, slider_value: Tuple[int, int]) -> pd.DataFrame:
+    """
+    Update a DataFrame based on the specified date column and the selected date range from the slider.
+
+    Parameters:
+    - data (pd.DataFrame): DataFrame to be updated.
+    - date_column (str): Name of the date column.
+    - slider_value (Tuple[int, int]): Selected date range as a tuple (min_value, max_value).
+
+    Returns:
+    pd.DataFrame: Updated DataFrame.
+
+    Example:
+    ```
+    momentum_data = retrieve_data_from_gsheet('gsheets', 'streamlit')
+    updated_momentum_data = update_dataframe_by_date_range(momentum_data, 'Purchase date', st.session_state.date_range_slider)
+    ```
+    """
+    updated_data = data[data[date_column].dt.year.between(slider_value[0], slider_value[1])].reset_index(drop=True)
+    return updated_data    
+
+def show_main_tab() -> None:
     """
     Display the main tab with key metrics, comparisons, and raw data for a trading strategy.
 
@@ -509,37 +602,25 @@ def show_main_tab(momentum_data: pd.DataFrame,
     Returns:
     None
     """
-    # Check if data is not empty and contains necessary columns
-    if momentum_data.empty or 'Purchase date' not in momentum_data.columns or 'Portfolio' not in momentum_data.columns:
-        st.warning("Invalid or empty data provided.")
-        return
+    # load strategies data from google sheet
+    momentum_data = retrive_data_from_gsheet('gsheets', 'streamlit')
+    hodl_btc_data = retrive_data_from_gsheet('gsheets', 'hodl_btc')
+    
+    # display slider to choose analytical period
+    display_date_range_slider(momentum_data, "Purchase date")
 
-    # Check if hodl_btc_data is not empty and contains necessary columns
-    if hodl_btc_data is not None and (hodl_btc_data.empty or 'Purchase date' not in hodl_btc_data.columns or 'Portfolio' not in hodl_btc_data.columns):
-        st.warning("Invalid or empty hodl_btc_data provided.")
-        return
+    # exclude outliers for both strategies if choosen
+    if st.toggle('Exclude outliers', help='Whether to exclude outliers beyond the range [-500%, 500%]'):
+        momentum_data = exclude_outliers(momentum_data)
+        hodl_btc_data = exclude_outliers(hodl_btc_data)
 
-    min_date = min(momentum_data['Purchase date'].dt.year)
-    max_date = max(momentum_data['Purchase date'].dt.year)
-    st.slider('Choose date range to display', 
-                min_value=min_date, 
-                max_value=max_date,
-                value=(min_date, max_date),
-                key='tab_main_date_range_slider')
-
-    # Update and exclude outliers for both strategies
-    momentum_data, hodl_btc_data = update_and_exclude_outliers(momentum_data, hodl_btc_data)
+    # Update current balance for both strategies
+    momentum_data = update_and_exclude_outliers(momentum_data)
+    hodl_btc_data = update_and_exclude_outliers(hodl_btc_data)
 
     # Update dataframe by slider date range
-    momentum_data = momentum_data[momentum_data['Purchase date'].dt.year.between(
-        st.session_state.tab_main_date_range_slider[0],
-        st.session_state.tab_main_date_range_slider[1]
-    )].reset_index(drop=True)
-
-    hodl_btc_data = hodl_btc_data[hodl_btc_data['Purchase date'].dt.year.between(
-        st.session_state.tab_main_date_range_slider[0],
-        st.session_state.tab_main_date_range_slider[1]
-    )].reset_index(drop=True)
+    momentum_data = update_dataframe_by_date_range(momentum_data, 'Purchase date', st.session_state.date_range_slider)
+    hodl_btc_data = update_dataframe_by_date_range(hodl_btc_data, 'Purchase date', st.session_state.date_range_slider)
 
     # Calculate key metrics for both strategies
     momentum_stats = calculate_strategy_stats(momentum_data)
@@ -550,11 +631,6 @@ def show_main_tab(momentum_data: pd.DataFrame,
 
     # Display comparison chart
     display_strategy_comparison_chart(momentum_data)
-
-    # # Display current coin price chart
-    # current_coin = momentum_data['Coin'].iloc[-1]
-    # st.subheader(f'*{current_coin} Price Chart*')
-    # st.line_chart(data=coin_api_data, x='datetime', y=[current_coin])
 
     # Display Return with Compound Interest metrics
     display_return_with_compound_interest(momentum_data)
