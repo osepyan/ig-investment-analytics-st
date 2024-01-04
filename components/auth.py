@@ -8,6 +8,6 @@ def auth():
         st.secrets['cookie']['name'],
         st.secrets['cookie']['key'],
         st.secrets['cookie']['expiry_days'],
-        st.secrets['preauthorized']
+        dict(st.secrets['preauthorized'])
     )
     return authenticator
