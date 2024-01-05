@@ -2,7 +2,7 @@ import streamlit as st
 from components.tab_main import show_main_tab
 from components.about import about_text
 from components.auth import auth
-from components.tab_corr import show_coin_api_data
+from components.tab_corr import show_corr_data
 
 
 # Configures the default settings of the page
@@ -27,7 +27,7 @@ if st.session_state["authentication_status"]:
     with tab1:
         show_main_tab()
     with tab2:
-        show_coin_api_data()
+        show_corr_data()
 
 elif st.session_state["authentication_status"] is False:
     st.error('Username/password is incorrect')

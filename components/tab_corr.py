@@ -150,7 +150,7 @@ def show_charts_container(correlation_structure: Dict[str, Dict[str, float]], co
                 if selected_base_coins:
                     visualize_line_chart(correlation_structure, coin_pct_change)
 
-def show_coin_api_data():
+def show_corr_data():
     coin_api_data = retrieve_coin_api_data('coinapigsheets', 'raw_data')
     coin_api_data_cleaned = drop_duplicates(coin_api_data, 'datetime')
 
