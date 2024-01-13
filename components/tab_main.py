@@ -606,6 +606,7 @@ def show_main_tab() -> None:
     momentum_data = retrive_data_from_gsheet('gsheets', 'streamlit')
     hodl_btc_data = retrive_data_from_gsheet('gsheets', 'hodl_btc')
     
+    st.subheader(f"Current Momentum Strategy Coin: {momentum_data['Coin'].iloc[-1]}")
     # display slider to choose analytical period
     display_date_range_slider(momentum_data, "Purchase date")
 

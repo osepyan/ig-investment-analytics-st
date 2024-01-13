@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from .gsheets.sheets_connector import CoinApiSheetsConnector
 
+
 def retrieve_coin_api_data(gsheet_connection: str, sheet: str) -> pd.DataFrame:
     """
     Retrieves coin API data from a Google Sheet.
