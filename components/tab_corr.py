@@ -6,6 +6,7 @@ import plotly.express as px
 from .gsheets.sheets_connector import CoinApiSheetsConnector
 
 
+st.cache_data(ttl=600)
 def retrieve_coin_api_data(gsheet_connection: str, sheet: str) -> pd.DataFrame:
     """
     Retrieves coin API data from a Google Sheet.
@@ -28,6 +29,7 @@ def retrieve_coin_api_data(gsheet_connection: str, sheet: str) -> pd.DataFrame:
     df = spreadsheet.get_data_from_sheet(sheet)
     return df
 
+st.cache_data(ttl=600)
 def find_negative_correlation_coins(correlation_matrix: pd.DataFrame) -> Dict[str, Dict[str, float]]:
     """
     Finds coins with negative correlation.
@@ -52,6 +54,7 @@ def find_negative_correlation_coins(correlation_matrix: pd.DataFrame) -> Dict[st
 
     return coins_with_negative_corr
 
+st.cache_data(ttl=600)
 def visualize_negative_correlations(coins_with_negative_corr: Dict[str, Dict[str, float]]):
     """
     Visualizes coins with negative correlation.
@@ -88,6 +91,7 @@ def visualize_negative_correlations(coins_with_negative_corr: Dict[str, Dict[str
 
     st.plotly_chart(fig, use_container_width=True)
 
+st.cache_data(ttl=600)
 def visualize_line_chart(coins_with_negative_corr, coin_api_data):
     fig = go.Figure()
     
@@ -119,6 +123,7 @@ def visualize_line_chart(coins_with_negative_corr, coin_api_data):
     
     st.plotly_chart(fig, use_container_width=True)
 
+st.cache_data(ttl=600)
 def drop_duplicates(data: pd.DataFrame, condition_column: str) -> pd.DataFrame:
     duplicate_indexes = data[data.duplicated(condition_column)].index
     return data.drop(duplicate_indexes)
@@ -134,6 +139,7 @@ def show_params_container(base_coins_list) -> None:
             st.multiselect("Select Base Coins:", base_coins_list, key="selected_base_coins")
             st.toggle("use log scale", value=False, key="use_log_scale")
 
+st.cache_data(ttl=600)
 def show_charts_container(correlation_structure: Dict[str, Dict[str, float]], coin_pct_change: pd.DataFrame) -> None:
     charts_container = st.container()
     selected_base_coins = st.session_state.selected_base_coins
@@ -151,6 +157,7 @@ def show_charts_container(correlation_structure: Dict[str, Dict[str, float]], co
                 if selected_base_coins:
                     visualize_line_chart(correlation_structure, coin_pct_change)
 
+st.cache_data(ttl=600)
 def show_corr_data():
     coin_api_data = retrieve_coin_api_data('coinapigsheets', 'raw_data')
     coin_api_data_cleaned = drop_duplicates(coin_api_data, 'datetime')

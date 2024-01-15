@@ -1,9 +1,15 @@
 import streamlit as st
+import pandas as pd
 from .gsheets.sheets_connector import CoinApiSheetsConnector
 from prophet import Prophet
 from prophet.plot import plot_plotly, plot_components_plotly
 
 
+@st.cache_data(ttl=600)
+def convert_df(df: pd.DataFrame):
+    return df.to_csv().encode('utf-8')
+
+st.cache_data(ttl=600)
 def show_prophet_tab():
     # get raw data
     spreadsheet = CoinApiSheetsConnector("coinapigsheets")
@@ -32,11 +38,21 @@ def show_prophet_tab():
     # predict future prices
     forecast = m.predict(future)
 
-    # draw the forecast
-    fig = plot_plotly(m, forecast)
     st.subheader(f"*Forecast {coin_to_predict} Data*")
+
+    # button to save data in CSV   
+    st.download_button(
+        label="Download Forecast Data as CSV",
+        data=convert_df(forecast),
+        file_name=f"{coin_to_predict}.csv",
+        mime='text/csv',
+    )
+
+    # draw the forecast chart
+    fig = plot_plotly(m, forecast)
     st.plotly_chart(fig, use_container_width=True)
 
+    # draw the forecast components
     st.subheader(f"*{coin_to_predict} Forecast Components*")
     fig2 = plot_components_plotly(m, forecast)
     st.plotly_chart(fig2, use_container_width=True)
